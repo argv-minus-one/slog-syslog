@@ -10,9 +10,9 @@ use std::ptr;
 use std::sync::{Mutex, MutexGuard};
 
 #[cfg(not(test))]
-use libc::{closelog, openlog, syslog};
+use libc::{closelog, openlog, syslog, setlogmask};
 #[cfg(test)]
-use mock::{self, closelog, openlog, syslog};
+use mock::{self, closelog, openlog, syslog, setlogmask};
 
 thread_local! {
     static TL_BUF: RefCell<Vec<u8>> = RefCell::new(Vec::with_capacity(128))
@@ -116,6 +116,12 @@ impl<F: MsgFormat> SyslogDrain<F> {
             // Here, we call `openlog`. This has to happen *before* freeing the
             // previous `ident` string, if applicable.
             unsafe { openlog(ident, builder.option, builder.facility.into()); }
+
+            if let Some(level) = builder.level {
+                unsafe {
+                    setlogmask(log_upto(get_priority(level)));
+                }
+            }
 
             // If `openlog` is called with a null `ident` pointer, then the
             // `ident` string passed to it previously will remain in use. But
@@ -225,17 +231,7 @@ impl<F: MsgFormat> Drain for SyslogDrain<F> {
             let mut tl_buf = &mut *tl_buf_mut;
 
             // Figure out the priority.
-            let priority: c_int = match record.level() {
-                Level::Critical => libc::LOG_CRIT,
-                Level::Error => libc::LOG_ERR,
-                Level::Warning => libc::LOG_WARNING,
-                Level::Debug | Level::Trace => libc::LOG_DEBUG,
-
-                // `slog::Level` isn't non-exhaustive, so adding any more levels
-                // would be a breaking change. That is highly unlikely to ever
-                // happen. Still, we'll handle the possibility here, just in case.
-                _ => libc::LOG_INFO
-            };
+            let priority = get_priority(record.level());
 
             // Format the message. 
             let fmt_err = format(&self.format, &mut tl_buf, record, values).err();
@@ -290,6 +286,7 @@ impl<F: MsgFormat> Drain for SyslogDrain<F> {
     }
 }
 
+
 /// Creates a `&CStr` from the given `Vec<u8>`, removing middle null bytes and
 /// adding a null terminator as needed.
 fn make_cstr_lossy(s: &mut Vec<u8>) -> &CStr {
@@ -311,4 +308,24 @@ fn make_cstr_lossy(s: &mut Vec<u8>) -> &CStr {
 fn assert_format_success(_result: io::Result<()>) {
     #[cfg(debug)]
     _result.expect("unexpected formatting error");
+}
+
+
+fn get_priority(level: Level) -> c_int {
+    match level {
+        Level::Critical => libc::LOG_CRIT,
+        Level::Error => libc::LOG_ERR,
+        Level::Warning => libc::LOG_WARNING,
+        Level::Debug | Level::Trace => libc::LOG_DEBUG,
+
+        // `slog::Level` isn't non-exhaustive, so adding any more levels
+        // would be a breaking change. That is highly unlikely to ever
+        // happen. Still, we'll handle the possibility here, just in case.
+        _ => libc::LOG_INFO
+    }
+}
+
+fn log_upto(pri: c_int) -> c_int {
+    // copied from syslog.h
+    (1 << ((pri) + 1)) - 1
 }

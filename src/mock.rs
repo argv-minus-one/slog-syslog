@@ -24,6 +24,9 @@ pub enum Event {
         message_f: String,
         message: String,
     },
+    SetLogMask {
+        maskpri: c_int
+    },
     DropOwnedIdent(String),
 }
 
@@ -86,4 +89,11 @@ pub unsafe extern "C" fn syslog(priority: c_int, message_f: *const c_char, messa
 
 pub unsafe fn string_from_ptr(ptr: *const c_char) -> String {
     String::from(CStr::from_ptr(ptr).to_string_lossy())
+}
+
+pub unsafe extern "C" fn setlogmask(maskpri: ::c_int) -> ::c_int {
+    push_event(Event::SetLogMask {
+        maskpri
+    });
+    0
 }

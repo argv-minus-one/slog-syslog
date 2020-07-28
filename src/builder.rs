@@ -4,6 +4,7 @@ use libc;
 use SyslogDrain;
 use std::borrow::Cow;
 use std::ffi::{CStr, CString};
+use slog::Level;
 
 /// Builds a [`SyslogDrain`].
 /// 
@@ -19,6 +20,7 @@ pub struct SyslogBuilder<F: MsgFormat = DefaultMsgFormat> {
     pub(crate) facility: Facility,
     pub(crate) ident: Option<Cow<'static, CStr>>,
     pub(crate) option: libc::c_int,
+    pub(crate) level: Option<Level>,
     pub(crate) format: F,
 }
 
@@ -28,6 +30,7 @@ impl Default for SyslogBuilder {
             facility: Facility::default(),
             ident: None,
             option: 0,
+            level: None,
             format: DefaultMsgFormat,
         }
     }
@@ -237,6 +240,14 @@ impl<F: MsgFormat> SyslogBuilder<F> {
         self
     }
 
+    /// Also emit log messages on `stderr` (**see warning**).
+    #[inline]
+    pub fn level(mut self, level: Level) -> Self {
+        self.level = Some(level);
+        self
+    }
+
+
     /// Set a format for log messages and structured data.
     /// 
     /// The default is [`DefaultMsgFormat`].
@@ -258,6 +269,7 @@ impl<F: MsgFormat> SyslogBuilder<F> {
             facility: self.facility,
             ident: self.ident,
             option: self.option,
+            level: self.level,
             format,
         }
     }
